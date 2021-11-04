@@ -8,11 +8,25 @@ using PC = Pokitto::Core;
 using PD = Pokitto::Display;
 using PB = Pokitto::Buttons;
 
+enum State
+{
+    stateUSBDrive,
+    stateConfirmFlashing,
+    stateFlashESP,
+    stateFlashingESPFinished,
+};
+
 USBMSD_SD* usbmsd_sd = nullptr;
 SDFileSystem *sdFs = nullptr;
 uint32_t prevBlock_read = 0;
 uint32_t prevBlock_write = 0;
 const int32_t margin = 14;
+const std::string ESPFlashfileName = "PokiPlusWifiLib.espfirm";
+uint32_t* MAGIC_ADDRESS = (uint32_t*)0xE000ED0C;
+const uint32_t RESTART_MCU = 0x05FA0004;
+int32_t count=0;
+int32_t state=stateUSBDrive;
+bool firstTime = true;
 
 void DrawPanel(int16_t x, int16_t y, int16_t w, int16_t h);
 template<class T>
@@ -30,34 +44,57 @@ void init()
     PD::invisiblecolor = 0;
     PD::setFont(fontZXSpec);
 
+    // Draw the screen
+    PD::setColor(13,0);
+    PD::fillRect(0, 0, 220, 176);
+    PD::setColor(9);  // orange
+    PD::print(margin,3,"*** ESP FLASHER ***\n\n");
+    PD::update();
+    
     // Wait until the user releases the A button.
     PB::update();
     while(PB::aBtn())
         PB::update();
+        
+    // Check the ESP flash image existence.
+    // Init the SD card.
+    bool ok = SDInit();
+    if(ok)
+    {
+        // Check the file existence.
+        wait_ms(2000);
+        FileHandle *file=sdFs->open(ESPFlashfileName.c_str(), O_RDWR );
+        if(file)
+        {
+            // Found ESP flash file. Start flashing.
+            state=stateConfirmFlashing;
+            file->close();
+        }
+    }
+    // Delete SDFS
+    if(sdFs)
+    {
+        sdFs->unmount();
+        delete(sdFs);
+        sdFs = nullptr;
+    }
 }
 
-enum 
-{
-    stateUSBDrive = 0,
-    stateFlashESP = 1,
-    stateFlashingESPFinished = 2,
-    stateConfirmUSBCableDisconnected = 3
-};
-
-int32_t count=0;
-int32_t state=stateUSBDrive;
-bool firstTime = true;
 
 void update() 
 {
     if(PB::pressed(BTN_A))
     {
         //if(state==stateUSBDrive) state=stateConfirmUSBCableDisconnected;
-        //else if(state==stateConfirmUSBCableDisconnected) state=stateFlashESP;
-        if(state==stateUSBDrive) state=stateFlashESP;
+        if(state==stateConfirmFlashing) state=stateFlashESP;
+        
+        // Restart Pokitto to be able to flash the ESP binary. If the restart is not made
+        // after the USB drive we cannot connect to ESP for some reason!
+        if(state==stateUSBDrive) *MAGIC_ADDRESS = RESTART_MCU;
     }
     else if(PB::pressed(BTN_B)) 
     {
+        if(state==stateConfirmFlashing) state=stateUSBDrive;
     }
     else if(PB::pressed(BTN_C) )
     {
@@ -72,15 +109,19 @@ void update()
             wait_ms(500);
         }
 
-        // Start the app loader
+        // Delete SDFS
         if(sdFs)
         {
             sdFs->unmount();
             delete(sdFs);
             sdFs = nullptr;
         }
+        
+        // Start the app loader
         PC::jumpToLoader();
     }
+        
+    // *** Handle states
         
     if(state==stateUSBDrive)  // USB drive state 
     {
@@ -92,19 +133,24 @@ void update()
         DrawPanel(5, startY, 220-10, 176-60);
         PD::setColor(9);  // orange
         PD::print(margin,3,"*** ESP FLASHER ***\n\n");
-        PD::setColor(7);
+        PD::setColor(7);  // white
         PD::println(margin, startY+3, "Connect the USB cable and");
         PD::println(margin, PD::cursorY, "copy the ESP file");
         PD::println(margin, PD::cursorY, "from PC to Pokitto.");
         PD::println("");
+        PD::println(margin, PD::cursorY, "The ESP flash file name should be");
+        PD::setColor(10);  // yellow
+        PD::println(margin, PD::cursorY, ESPFlashfileName.c_str());
+        PD::println("");
+        PD::setColor(7);  // white
         PD::println(margin, PD::cursorY, "When the file has been");
         PD::println(margin, PD::cursorY, "copied, press A");
     
         PD::setColor(10);  // yellow
         if(firstTime)
-            PD::println(margin, 120, "A: Flash ESP");
+            PD::println(margin, 120, "A: File copied");
         else
-            PD::println(margin, 120, "A: Flash ESP      C: Cancel");
+            PD::println(margin, 120, "A: File copied      C: Cancel");
         
         // Print to status area
         int32_t statusAreaY = 140;
@@ -155,20 +201,24 @@ void update()
         }
     }  // end if state==stateUSBDrive
 
-    else if(state==stateConfirmUSBCableDisconnected)  // Disconnect cable view 
+    else if(state==stateConfirmFlashing)  // Disconnect cable view 
     {
         PD::setColor(13,0);
         PD::fillRect(0, 0, 220, 176);
         PD::setCursor(0,0);
+        PD::setColor(9);  // orange
+        PD::print(margin,3,"*** ESP FLASHER ***\n\n");
     
         int32_t startY = 20;
-        DrawPanel(5, startY+50, 220-10, 176-60-50);
+        DrawPanel(5, startY+40, 220-10, 176-60-40);
         PD::setColor(7);
-        PD::println(margin, startY+50+10, "Make sure the USB cable is");
-        PD::println(margin, PD::cursorY,  "disconnected before flashing ESP.");
+        PD::println(margin, startY+50+10, "The ESP flash file found in SD:");
+        PD::println(margin+10, PD::cursorY, ESPFlashfileName.c_str());
+        PD::println();
+        PD::println(margin, PD::cursorY,  "Press A to prodeed to flashing.");
      
         PD::setColor(10);  // yellow
-        PD::println(margin, 120, "A: Ok      C: Cancel");
+        PD::println(margin, 120, "A: Flash ESP   B: Start USB drive");
         
         PD::update();
         
@@ -194,9 +244,12 @@ void update()
         PD::update();
         
          // Disconnect USB disk
-        usbmsd_sd->disconnect();
-        delete(usbmsd_sd);
-        usbmsd_sd = nullptr;
+        if(usbmsd_sd)
+        {
+            usbmsd_sd->disconnect();
+            delete(usbmsd_sd);
+            usbmsd_sd = nullptr;
+        }
         
         wait_ms(3000);
         
@@ -209,8 +262,7 @@ void update()
         if(ok)
         {
             wait_ms(2000);
-            std::string fileName = "PokiPlusWifiLib.espfirm";
-            ok = flashFirmware(fileName, 0);
+            ok = flashFirmware(ESPFlashfileName, 0);
         }
         
         // Print to status area
@@ -287,6 +339,8 @@ void PrintProgressBar(int32_t x, int32_t y, int32_t w, int32_t h, int8_t color, 
 
 bool SDInit()
 {
+    if(sdFs) return true;
+    
     sdFs = new SDFileSystem( P0_9, P0_8, P0_6, P0_7, "sd", NC, SDFileSystem::SWITCH_NONE, 25000000 );
     sdFs->crc(false);
     sdFs->write_validation(false);
@@ -349,6 +403,9 @@ bool flashFirmware(std::string path, const uint32_t flash_offset)
             }
             file->close();
             Loader.flash_end(true);
+            
+            // Remove the flash file.
+            sdFs->remove(path.c_str());
 
             PrintToStatusArea(11, "Firmware flashed Successfully");
             PD::update();
