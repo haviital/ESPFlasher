@@ -134,8 +134,9 @@ void update()
         PD::setColor(9);  // orange
         PD::print(margin,3,"*** ESP FLASHER ***\n\n");
         PD::setColor(7);  // white
-        PD::println(margin, startY+3, "Connect the USB cable and");
-        PD::println(margin, PD::cursorY, "copy the ESP file");
+        PD::println(margin, startY+3,    "Connect the USB cable and wait");
+        PD::println(margin, PD::cursorY, "for the USB drive to be ready");
+        PD::println(margin, PD::cursorY, "on PC. Then copy the ESP file");
         PD::println(margin, PD::cursorY, "from PC to Pokitto.");
         PD::println("");
         PD::println(margin, PD::cursorY, "The ESP flash file name should be");

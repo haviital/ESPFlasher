@@ -298,18 +298,18 @@
 		"windows": "Desktop"
 	},
 	"meta": {
-		"": {},
-		"ESPFlasher.bin": {},
 		"ESPFlasher.elf": {},
+		"ESPFlasher.bin": {},
 		"ESPLoader.h": {},
 		"FlashToPokitto.sh": {},
 		"LICENSE": {},
-		"README.md": {},
 		"My_settings.h": {},
+		"README.md": {},
 		"USBMSD_SD.cpp": {},
 		"USBMSD_SD.h": {},
 		"main.cpp": {},
-		"project.json": {}
+		"project.json": {},
+		"": {}
 	},
 	"ideVersion": 10000,
 	"BUILDFlags": {
